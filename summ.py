@@ -1,15 +1,8 @@
 import os
-from dotenv import load_dotenv
 import gradio as gr
 from huggingface_hub import InferenceClient
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Fetch the Hugging Face token from Render's environment variables
-hf_token = os.getenv("HF_TOKEN")
-
-# Initialize the client to use Hugging Face's free serverless API
+hf_token = os.environ.get("HF_TOKEN")
 client = InferenceClient("facebook/bart-large-cnn", token=hf_token)
 
 def summarize_text(paragraph):
@@ -17,9 +10,8 @@ def summarize_text(paragraph):
         return "Please enter a valid paragraph."
 
     try:
-        response = client.summarization(
-            paragraph, parameters={"max_length": 150, "min_length": 30}
-        )
+        # FIX: Removed the 'parameters' dictionary argument
+        response = client.summarization(paragraph)
         return response.summary_text
     except Exception as e:
         return f"Error: {str(e)}"
@@ -39,7 +31,5 @@ demo = gr.Interface(
 )
 
 if __name__ == "__main__":
-    # Render assigns a dynamic port; default to 7860 for local testing
     port = int(os.environ.get("PORT", 7860))
-    # Bind to 0.0.0.0 so Render's load balancer can route traffic to the app
     demo.launch(server_name="0.0.0.0", server_port=port)
