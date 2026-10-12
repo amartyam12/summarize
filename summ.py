@@ -1,71 +1,45 @@
 import os
-from huggingface_hub import snapshot_download
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from dotenv import load_dotenv
 import gradio as gr
+from huggingface_hub import InferenceClient
 
-MODEL_NAME = "facebook/bart-large-cnn"
-LOCAL_MODEL_DIR = "./bart_model"
+# Load environment variables from .env file
+load_dotenv()
 
-# Check if model weight files exist locally
-has_weights = os.path.exists(
-    os.path.join(LOCAL_MODEL_DIR, "model.safetensors")
-) or os.path.exists(os.path.join(LOCAL_MODEL_DIR, "pytorch_model.bin"))
+# Fetch the Hugging Face token from Render's environment variables
+hf_token = os.getenv("HF_TOKEN")
 
-# Download model locally if missing
-if not has_weights:
-  print(f"Downloading {MODEL_NAME} into '{LOCAL_MODEL_DIR}'...")
-  snapshot_download(repo_id=MODEL_NAME, local_dir=LOCAL_MODEL_DIR)
-  print("Download complete!")
-else:
-  print("Model files found locally. Skipping download.")
+# Initialize the client to use Hugging Face's free serverless API
+client = InferenceClient("facebook/bart-large-cnn", token=hf_token)
 
-# Load model and tokenizer once when the app starts
-print("Loading model and tokenizer into memory...")
-tokenizer = AutoTokenizer.from_pretrained(
-    LOCAL_MODEL_DIR, local_files_only=True
-)
-model = AutoModelForSeq2SeqLM.from_pretrained(
-    LOCAL_MODEL_DIR, local_files_only=True
-)
-print("Model loaded successfully!")
-
-
-# Summarization function linked to the UI
 def summarize_text(paragraph):
-  if not paragraph.strip():
-    return "Please enter a valid paragraph."
+    if not paragraph.strip():
+        return "Please enter a valid paragraph."
 
-  inputs = tokenizer(
-      paragraph, return_tensors="pt", max_length=1024, truncation=True
-  )
-  summary_ids = model.generate(
-      inputs["input_ids"],
-      max_length=150,
-      min_length=30,
-      num_beams=4,
-      early_stopping=True,
-  )
-  return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-
+    try:
+        response = client.summarization(
+            paragraph, parameters={"max_length": 150, "min_length": 30}
+        )
+        return response.summary_text
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 # Build the Gradio Web UI
 demo = gr.Interface(
     fn=summarize_text,
     inputs=gr.Textbox(
         lines=8,
-        placeholder=(
-            "Paste your long paragraph or article here to summarize..."
-        ),
+        placeholder="Paste your long paragraph or article here to summarize...",
         label="Input Paragraph",
     ),
     outputs=gr.Textbox(lines=4, label="AI Generated Summary"),
-    title="Local AI Text Summarizer",
-    description=(
-        "Running completely offline using `facebook/bart-large-cnn` and"
-        " Transformers."
-    ),
+    title="Cloud AI Text Summarizer",
+    description="Running on Render using the Hugging Face Inference API.",
     theme="default",
 )
 
 if __name__ == "__main__":
-  demo.launch()
+    # Render assigns a dynamic port; default to 7860 for local testing
+    port = int(os.environ.get("PORT", 7860))
+    # Bind to 0.0.0.0 so Render's load balancer can route traffic to the app
+    demo.launch(server_name="0.0.0.0", server_port=port)
